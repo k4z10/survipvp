@@ -1,4 +1,4 @@
-# SurvipvP
+# Survipvp
 
 A 2D Multiplayer Survival PvP game built with C# and Raylib.
 
@@ -21,7 +21,7 @@ The game features a clean 2D aesthetic with:
 ### Joining a Game (LAN)
 1.  **Start the Server**:
     - Build and run the `GameServer` project.
-    - Console will show "Server started on port 5002".
+    - Console will show "Server started on port 6767".
 2.  **Start the Client**:
     - Build and run the `GameClient` project.
 3.  **Startup Screen**:
