@@ -1,4 +1,4 @@
-# SurvipvP
+# survipvp
 
 A 2D Multiplayer Survival PvP game built with C# and Raylib.
 
