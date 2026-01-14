@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using GameShared;
+using MemoryPack;
 
 namespace GameServer;
 
@@ -27,11 +29,8 @@ class Program
 
             var session = new ClientSession(nextClientId++, tcpClient, channel.Writer);
             
-            byte[] handshakePayload = new byte[5];
-            handshakePayload[0] = (byte)OpCode.Connect;
-            BinaryPrimitives.WriteInt32LittleEndian(handshakePayload.AsSpan(1), session.Id);
-
-            session.Send(handshakePayload);
+            // Send Handshake
+            session.Send(new JoinPacket(session.Id));
 
             engine.AddClient(session);
             _ = Task.Run(session.StartProcessingAsync);

@@ -1,6 +1,9 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Net.Sockets;
+using GameShared;
+using MemoryPack;
 
 namespace GameClient;
 
@@ -11,8 +14,14 @@ public class NetworkClient
     private CancellationTokenSource _cts = new();
 
     public Dictionary<int, PlayerState> WorldState { get; private set; } = new();
+    public Dictionary<int, ResourceState> Resources { get; private set; } = new();
+    public Dictionary<int, StructureState> Structures { get; private set; } = new();
+    public Dictionary<ResourceType, int> Inventory { get; private set; } = new();
+    public HashSet<WeaponType> UnlockedWeapons { get; private set; } = new();
     public int MyPlayerId { get; private set; } = -1;
     public bool IsConnected => _client != null && _client.Connected;
+    public event Action<int> OnDeath; 
+
 
     private readonly List<WorldSnapshot> _snapshots = new();
     private long _serverTimeOffset = 0;
@@ -72,7 +81,16 @@ public class NetworkClient
                      // Lerp
                      float lx = pPrev.X + (kvp.Value.X - pPrev.X) * t;
                      float ly = pPrev.Y + (kvp.Value.Y - pPrev.Y) * t;
-                     result[kvp.Key] = new PlayerState { Id = kvp.Key, X = lx, Y = ly };
+                     result[kvp.Key] = new PlayerState { 
+                         Id = kvp.Key, 
+                         X = lx, 
+                         Y = ly, 
+                         CurrentWeapon = kvp.Value.CurrentWeapon,
+                         Rotation = kvp.Value.Rotation,
+                         HP = kvp.Value.HP,
+                         Nickname = kvp.Value.Nickname,
+                         Color = kvp.Value.Color
+                     };
                  }
                  else
                  {
@@ -106,37 +124,91 @@ public class NetworkClient
     {
         if (!IsConnected) return;
 
-        // Packet: [Len 4][OpCode 1][X 4][Y 4]
-        int payloadSize = 9; 
-        byte[] buffer = new byte[4 + payloadSize];
+        var packet = new PlayerMovePacket(x, y);
+        Send(packet);
+    }
+    
+    public void SendJoinRequest(string nickname, uint color)
+    {
+        if (!IsConnected) return;
+        Send(new JoinRequestPacket(nickname, color));
+    }
+    
+    public void SendGather(int resourceId)
+    {
+        if (!IsConnected) return;
+        Send(new GatherResourcePacket(resourceId));
+    }
 
-        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0), payloadSize);
-        buffer[4] = (byte)OpCode.PlayerMove; // 0x02
-        BitConverter.TryWriteBytes(buffer.AsSpan(5), x);
-        BitConverter.TryWriteBytes(buffer.AsSpan(9), y);
+    public void SendCraft(WeaponType weapon)
+    {
+        if (!IsConnected) return;
+        Send(new CraftRequestPacket(weapon));
+    }
 
-        try { _stream.Write(buffer); } catch { _cts.Cancel(); }
+    public void SendEquip(WeaponType weapon)
+    {
+        if (!IsConnected) return;
+        Send(new EquipRequestPacket(weapon));
+    }
+    
+    public void SendAttack()
+    {
+        if (!IsConnected) return;
+        Send(new AttackPacket());
+    }
+
+    public void SendRotate(float rotation)
+    {
+        if (!IsConnected) return;
+        Send(new PlayerRotatePacket(rotation));
+    }
+    
+    public void SendBuild(StructureType type, float x, float y, float rotation)
+    {
+        if (!IsConnected) return;
+        Send(new BuildRequestPacket(type, x, y, rotation));
+    }
+    
+    private void Send(IPacket packet)
+    {
+        byte[] data = MemoryPackSerializer.Serialize(packet);
+        int totalLength = data.Length;
+        
+        byte[] lenRaw = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(lenRaw, totalLength);
+        
+        try 
+        { 
+            lock (_stream)
+            {
+                _stream.Write(lenRaw);
+                _stream.Write(data); 
+            }
+        } 
+        catch { _cts.Cancel(); }
     }
 
     private async Task ReceiveLoop()
     {
-        // Bufor na nagłówek (długość)
         byte[] lenBuffer = new byte[4];
 
         try
         {
             while (!_cts.IsCancellationRequested)
             {
-                // 1. Czytaj długość (4 bajty)
+                // 1. Read length
                 if (!await ReadExactAsync(lenBuffer, 4)) break;
                 int length = BinaryPrimitives.ReadInt32LittleEndian(lenBuffer);
 
-                // 2. Czytaj payload
+                // 2. Read payload
                 byte[] payload = new byte[length];
                 if (!await ReadExactAsync(payload, length)) break;
 
-                // 3. Przetwórz
-                ProcessPacket(payload);
+                // 3. Process
+                // Deserialize IPacket
+                var packet = MemoryPackSerializer.Deserialize<IPacket>(payload);
+                ProcessPacket(packet);
             }
         }
         catch (Exception ex)
@@ -157,26 +229,21 @@ public class NetworkClient
         return true;
     }
 
-    private void ProcessPacket(byte[] data)
+    private void ProcessPacket(IPacket packet)
     {
-        var opCode = (OpCode)data[0];
-
-        switch (opCode)
+        switch (packet)
         {
-            case OpCode.Connect: // Handshake (0x01)
-                // Payload: [OpCode 1b][ID 4b]
-                MyPlayerId = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(1));
+            case JoinPacket join:
+                MyPlayerId = join.PlayerId;
                 Console.WriteLine($"Assigned Player ID: {MyPlayerId}");
                 break;
 
-            case OpCode.WorldUpdate: // Snapshot (0x03)
-                // Payload: [OpCode 1b][Timestamp 8b][Count 4b][ID 4b][X 4b][Y 4b]...
-                long serverTimestamp = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(1));
-                int count = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(9));
+            case WorldUpdatePacket update:
+                long serverTimestamp = update.Timestamp;
                 
                 // Sync Time
                 long now = Stopwatch.GetTimestamp();
-                long latency = 0; // Assume 0 or calc later
+                long latency = 0; 
                 long offset = now - serverTimestamp + latency;
                 
                 if (!_timeSynced)
@@ -186,30 +253,44 @@ public class NetworkClient
                 }
                 else
                 {
-                    // Smooth sync (simple exponential smoothing)
                     _serverTimeOffset = (long)(_serverTimeOffset * 0.9 + offset * 0.1);
                 }
 
-                var newPlayers = new Dictionary<int, PlayerState>(count);
-                int offsetIdx = 13;
-
-                for (int i = 0; i < count; i++)
+                var newPlayers = new Dictionary<int, PlayerState>();
+                foreach (var p in update.Players)
                 {
-                    if (offsetIdx + 12 > data.Length) break;
-
-                    int id = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offsetIdx));
-                    float x = BitConverter.ToSingle(data.AsSpan(offsetIdx + 4));
-                    float y = BitConverter.ToSingle(data.AsSpan(offsetIdx + 8));
-
-                    newPlayers[id] = new PlayerState { Id = id, X = x, Y = y };
-                    offsetIdx += 12;
+                    newPlayers[p.Id] = p;
                 }
 
                 lock (_snapshots)
                 {
                     _snapshots.Add(new WorldSnapshot { Timestamp = serverTimestamp, Players = newPlayers });
-                    // Keep buffer small? Let GetInterpolatedState prune.
                 }
+                break;
+
+            case ResourceStatePacket res:
+                foreach (var r in res.Resources)
+                {
+                    Resources[r.Id] = r;
+                }
+                break;
+
+            case InventoryUpdatePacket inv:
+                Inventory = inv.Inventory;
+                UnlockedWeapons = new HashSet<WeaponType>(inv.UnlockedWeapons);
+                break;
+                
+            case StructureStatePacket str:
+                var newStructures = new Dictionary<int, StructureState>();
+                foreach (var s in str.Structures)
+                {
+                    newStructures[s.Id] = s;
+                }
+                Structures = newStructures;
+                break;
+                
+            case DeathPacket death:
+                OnDeath?.Invoke(death.RespawnTime);
                 break;
         }
     }

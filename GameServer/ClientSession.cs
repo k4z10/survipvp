@@ -4,6 +4,8 @@ using System.IO.Pipelines;
 using System.Net.Sockets;
 using System.Runtime.Serialization;
 using System.Threading.Channels;
+using GameShared;
+using MemoryPack;
 
 namespace GameServer;
 
@@ -83,7 +85,8 @@ public class ClientSession
         finally
         {
             await reader.CompleteAsync();
-            await _writer.WriteAsync(new InboundPacket(Id, OpCode.Disconnect, Array.Empty<byte>()), _cts.Token);
+            await _writer.WriteAsync(new InboundPacket(Id, new DisconnectPacket()), _cts.Token);
+
             _client.Close();
         }
     }
@@ -93,28 +96,41 @@ public class ClientSession
 
         if (buffer.Length < 4) return false;
 
-        Span<byte> length = stackalloc byte[4];
-        buffer.Slice(0, 4).CopyTo(length);
-        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(length);
+        Span<byte> lengthSpan = stackalloc byte[4];
+        buffer.Slice(0, 4).CopyTo(lengthSpan);
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(lengthSpan);
 
-        if (payloadLength > 1024 * 1024) throw new InvalidDataContractException("Packet to large!");
+        if (payloadLength > 1024 * 1024) throw new InvalidDataContractException("Packet too large!");
         if (buffer.Length < 4 + payloadLength) return false;
 
         var payloadSlice = buffer.Slice(4, payloadLength);
-        byte opCodeByte = payloadSlice.FirstSpan[0];
-        byte[] payloadData = payloadSlice.Slice(1).ToArray();
+        
+        IPacket deserializedPacket;
+        try 
+        {
+             deserializedPacket = MemoryPackSerializer.Deserialize<IPacket>(payloadSlice.ToArray());
+        }
+        catch
+        {
+             // Invalid packet, skip
+             buffer = buffer.Slice(4 + payloadLength);
+             return true; 
+        }
 
-        packet = new InboundPacket(Id, (OpCode)opCodeByte, payloadData);
+        packet = new InboundPacket(Id, deserializedPacket);
         buffer = buffer.Slice(4 + payloadLength);
         return true;
     }
-    public void Send(ReadOnlySpan<byte> data)
+    public void Send(IPacket packet)
     {
         if (!_client.Connected) return;
         
+        byte[] data = MemoryPackSerializer.Serialize(packet);
         int totalLength = data.Length;
+        
         Span<byte> header = stackalloc byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, totalLength);
+        
         lock (_stream)
         {
             try
