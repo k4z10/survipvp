@@ -273,10 +273,6 @@ public class GameEngine
         }
     }
     
-    // ... Implement Handlers (Moved from backup) ...
-    // Since I can't construct the whole file from memory easily, I'll copy the logic I just wrote in previous steps.
-    // I need ResourceManager too.
-    
     // Handlers
     private void HandleGather(int connectionId, GatherResourcePacket packet)
     {
@@ -589,10 +585,8 @@ public class GameEngine
             if (!_clients.ContainsKey(connectionId)) return;
             if (_players.ContainsKey(connectionId)) return; 
             
-            float angle = Random.Shared.NextSingle() * MathF.PI * 2;
-            float dist = Random.Shared.NextSingle() * 20.0f;
-            float x = 250 + MathF.Cos(angle) * dist;
-            float y = 250 + MathF.Sin(angle) * dist;
+            float x = 250;
+            float y = 250;
             
             var p = new PlayerState
             {

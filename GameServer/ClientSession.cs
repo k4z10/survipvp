@@ -147,7 +147,7 @@ public class ClientSession
                     byte[] header = new byte[4];
                     BinaryPrimitives.WriteInt32LittleEndian(header, totalLength);
                     
-                    lock (_stream) // Should be exclusive access now ideally, but lock is safe
+                    lock (_stream)
                     {
                         _stream.Write(header);
                         _stream.Write(data);
@@ -157,7 +157,7 @@ public class ClientSession
         }
         catch (Exception)
         {
-            // Ignore write errors, connection will close
+            // ignorujemy errory, bo i tak wyjdzie
         }
     }
 }
