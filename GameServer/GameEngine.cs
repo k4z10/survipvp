@@ -24,22 +24,15 @@ public class GameEngine
     public async Task RunLoopAsync()
     {
         const int TargetFps = 60;
-        const int TickTime = 10_000_000 / TargetFps;
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TargetFps));
 
         Console.WriteLine("Game starting...");
 
-        while (true)
+        while (await timer.WaitForNextTickAsync())
         {
-            long startTick = Stopwatch.GetTimestamp();
-
             ProcessNetworkEvents();
             UpdatePhysics();
             BrodcastWorldState();
-
-            long endTick = Stopwatch.GetTimestamp();
-            long elapsedTime = endTick - startTick;
-            long waitTicks = TickTime - elapsedTime;
-            if (waitTicks > 0) await Task.Delay(TimeSpan.FromTicks(waitTicks));
         }
     }
 

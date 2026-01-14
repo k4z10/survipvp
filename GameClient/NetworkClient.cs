@@ -11,7 +11,8 @@ public class NetworkClient
 {
     private TcpClient _client;
     private NetworkStream _stream;
-    private CancellationTokenSource _cts = new();
+    private CancellationTokenSource _cts;
+    private Task _receiveTask;
 
     public Dictionary<int, PlayerState> WorldState { get; private set; } = new();
     public Dictionary<int, ResourceState> Resources { get; private set; } = new();
@@ -104,20 +105,44 @@ public class NetworkClient
 
     public async Task ConnectAsync(string ip, int port)
     {
+        Disconnect();
+
         try
         {
+            _cts = new CancellationTokenSource();
             _client = new TcpClient();
-            await _client.ConnectAsync(ip, port);
+            await _client.ConnectAsync(ip, port, _cts.Token);
             _client.NoDelay = true;
             _stream = _client.GetStream();
             Console.WriteLine("Connected to server.");
 
-            _ = Task.Run(ReceiveLoop);
+            _receiveTask = Task.Run(ReceiveLoop, _cts.Token);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Connection failed: {ex.Message}");
+            Disconnect();
         }
+    }
+
+    public void Disconnect()
+    {
+        if (_cts != null)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+        }
+
+        if (_client != null)
+        {
+            _client.Close();
+            _client.Dispose();
+            _client = null;
+        }
+
+        _stream = null;
+        Console.WriteLine("Disconnected.");
     }
 
     public void SendPosition(float x, float y)

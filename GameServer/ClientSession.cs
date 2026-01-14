@@ -15,6 +15,7 @@ public class ClientSession
     private readonly TcpClient _client;
     private readonly NetworkStream _stream;
     private readonly ChannelWriter<InboundPacket> _writer;
+    private readonly Channel<IPacket> _outbox;
     private readonly CancellationTokenSource _cts = new();
 
     public ClientSession(int id, TcpClient client, ChannelWriter<InboundPacket> writer)
@@ -23,6 +24,8 @@ public class ClientSession
         _client = client;
         _stream = client.GetStream();
         _writer = writer;
+        _outbox = Channel.CreateUnbounded<IPacket>(new UnboundedChannelOptions 
+            { SingleReader = true, SingleWriter = false });
     }
 
     public async Task StartProcessingAsync()
@@ -30,7 +33,10 @@ public class ClientSession
         var pipe = new Pipe();
         var fillTask = FillPipeAsync(pipe.Writer);
         var readTask = ReadPipeAsync(pipe.Reader);
-        await Task.WhenAll(fillTask, readTask);
+        var sendTask = SendLoopAsync();
+        
+        await Task.WhenAny(fillTask, readTask, sendTask);
+        _cts.Cancel(); // If any loop finishes (error/close), cancel others
     }
 
     private async Task FillPipeAsync(PipeWriter writer)
@@ -123,25 +129,35 @@ public class ClientSession
     }
     public void Send(IPacket packet)
     {
-        if (!_client.Connected) return;
-        
-        byte[] data = MemoryPackSerializer.Serialize(packet);
-        int totalLength = data.Length;
-        
-        Span<byte> header = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(header, totalLength);
-        
-        lock (_stream)
+        _outbox.Writer.TryWrite(packet);
+    }
+
+    private async Task SendLoopAsync()
+    {
+        try
         {
-            try
+            var reader = _outbox.Reader;
+            while (await reader.WaitToReadAsync(_cts.Token))
             {
-                _stream.Write(header);
-                _stream.Write(data);
+                while (reader.TryRead(out var packet))
+                {
+                    byte[] data = MemoryPackSerializer.Serialize(packet);
+                    int totalLength = data.Length;
+                    
+                    byte[] header = new byte[4];
+                    BinaryPrimitives.WriteInt32LittleEndian(header, totalLength);
+                    
+                    lock (_stream) // Should be exclusive access now ideally, but lock is safe
+                    {
+                        _stream.Write(header);
+                        _stream.Write(data);
+                    }
+                }
             }
-            catch
-            {
-                _cts.Cancel();
-            }
+        }
+        catch (Exception)
+        {
+            // Ignore write errors, connection will close
         }
     }
 }

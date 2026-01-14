@@ -344,7 +344,7 @@ public class Game
     private void Render()
     {
         Raylib.BeginDrawing();
-        Raylib.ClearBackground(new Color(20, 20, 20, 255)); // Ciemnoszare tło
+        Raylib.ClearBackground(new Color(20, 20, 20, 255));
 
         switch (_gameState)
         {
@@ -439,7 +439,7 @@ public class Game
         int cx = sw / 2;
         int cy = sh / 2;
         
-        Raylib.DrawText("SURVIV.PVP", cx - 150, cy - 200, 60, Color.Red);
+        Raylib.DrawText("survipvp", cx - 150, cy - 200, 60, Color.Red);
         
         // Nickname
         Color nickColor = (!_editingIp) ? Color.Yellow : Color.Gray;
@@ -501,27 +501,17 @@ public class Game
 
     private void DrawGame()
     {
-        // Obliczenia transformacji (World -> Screen)
         float screenW = Raylib.GetScreenWidth();
         float screenH = Raylib.GetScreenHeight();
         
-        // Scale: ile pikseli na 1 jednostkę świata
         float scale = screenW / ViewWidthUnits; 
         
         float centerX = screenW / 2.0f;
         float centerY = screenH / 2.0f;
-
-        // ---------------------------------------------------------
-        // 1. Rysowanie Siatki (Grid) - kluczowe dla poczucia ruchu
-        // ---------------------------------------------------------
+        
         DrawGrid(scale, centerX, centerY, screenW, screenH);
 
-        // ---------------------------------------------------------
-        // 2. Rysowanie Innych Graczy (Remote)
-        // ---------------------------------------------------------
-        // ---------------------------------------------------------
-        // 2. Rysowanie Innych Graczy (Remote)
-        // ---------------------------------------------------------
+        // rysowanie innych graczy
         var snapshot = _net.GetInterpolatedState(0.1f); // 100ms opóźnienia interpolacji
         foreach (var player in snapshot.Values)
         {
