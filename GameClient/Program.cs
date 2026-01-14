@@ -4,9 +4,8 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        var ip = "127.0.0.1";
-        var port = 5002;
+        var port = 6767;
         var game = new Game();
-        await game.Run(ip, port);
+        await game.Run(port);
     }
 }

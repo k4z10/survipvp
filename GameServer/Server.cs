@@ -11,7 +11,7 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        int port = 5002;
+        int port = 6767;
         var listener = new TcpListener(IPAddress.Any, port);
         listener.Start();
         Console.WriteLine($"Server started on port {port}");

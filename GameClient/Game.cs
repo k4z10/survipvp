@@ -35,6 +35,12 @@ public class Game
         "Sky Blue", "Red", "Green", "Orange", "Purple", "Pink", "White", "Black" 
     };
     
+    // Connection
+    private string _serverIp = "127.0.0.1";
+    private bool _editingIp = false; // false = Nickname, true = IP
+    private bool _isConnecting = false;
+    private Task _connectionTask;
+    
     // Death
     private float _deathTimer = 0f;
 
@@ -55,11 +61,10 @@ public class Game
         _deathTimer = respawnTimeMs / 1000.0f;
     }
 
-    public async Task Run(string ip, int port)
+    public async Task Run(int port)
     {
-        // 2. Łączenie w tle (nie blokujemy renderowania przy starcie)
-        Task connectionTask = _net.ConnectAsync(ip, port);
-
+        // 2. Łączenie w tle (nie blokujemy renderowania przy starcie) - MOVED TO UI
+        
         // Główna pętla gry
         while (!Raylib.WindowShouldClose())
         {
@@ -68,7 +73,7 @@ public class Game
             switch (_gameState)
             {
                 case GameState.Startup:
-                    UpdateStartup();
+                    UpdateStartup(port);
                     break;
                 case GameState.Playing:
                     HandleInput(dt);
@@ -82,7 +87,8 @@ public class Game
         }
 
         Raylib.CloseWindow();
-        await connectionTask; // Czekamy na czyste zamknięcie socketu (opcjonalne)
+        Raylib.CloseWindow();
+        if (_connectionTask != null) await _connectionTask;
     }
 
     private void HandleInput(float dt)
@@ -357,22 +363,56 @@ public class Game
         Raylib.EndDrawing();
     }
 
-    private void UpdateStartup()
+    private void UpdateStartup(int port)
     {
-        // Nickname Input
+        if (_isConnecting)
+        {
+             if (_net.IsConnected)
+             {
+                 _isConnecting = false;
+                 
+                 // Send Join
+                 uint c = (uint)Raylib.ColorToInt(_availableColors[_selectedColorIndex]); 
+                 _net.SendJoinRequest(_nickname, c);
+                 _gameState = GameState.Playing;
+             }
+             return;
+        }
+
+        // Tab Switch
+        if (Raylib.IsKeyPressed(KeyboardKey.Tab))
+        {
+            _editingIp = !_editingIp;
+        }
+
+        // Input
         int key = Raylib.GetCharPressed();
         while (key > 0)
         {
-            if ((key >= 32) && (key <= 125) && (_nickname.Length < 16))
+            if ((key >= 32) && (key <= 125))
             {
-                _nickname += (char)key;
+                if (!_editingIp)
+                {
+                     if (_nickname.Length < 16) _nickname += (char)key;
+                }
+                else
+                {
+                     if (_serverIp.Length < 20) _serverIp += (char)key;
+                }
             }
             key = Raylib.GetCharPressed();
         }
         
         if (Raylib.IsKeyPressed(KeyboardKey.Backspace))
         {
-            if (_nickname.Length > 0) _nickname = _nickname.Substring(0, _nickname.Length - 1);
+            if (!_editingIp)
+            {
+                if (_nickname.Length > 0) _nickname = _nickname.Substring(0, _nickname.Length - 1);
+            }
+            else
+            {
+                 if (_serverIp.Length > 0) _serverIp = _serverIp.Substring(0, _serverIp.Length - 1);
+            }
         }
         
         // Color Selection
@@ -381,18 +421,13 @@ public class Game
         if (_selectedColorIndex < 0) _selectedColorIndex = _availableColors.Length - 1;
         if (_selectedColorIndex >= _availableColors.Length) _selectedColorIndex = 0;
         
-        // Play
+        // Connect & Play
         if (Raylib.IsKeyPressed(KeyboardKey.Enter))
         {
-            if (_net.IsConnected && !string.IsNullOrWhiteSpace(_nickname))
+            if (!string.IsNullOrWhiteSpace(_nickname) && !string.IsNullOrWhiteSpace(_serverIp))
             {
-                uint c = (uint)Raylib.ColorToInt(_availableColors[_selectedColorIndex]); 
-                // ColorToInt returns generic int, pack it right.
-                // Actually Raylib.ColorToInt returns int with RGBA packing usually.
-                // Protocol expects uint.
-                
-                _net.SendJoinRequest(_nickname, c);
-                _gameState = GameState.Playing;
+                _isConnecting = true;
+                _connectionTask = _net.ConnectAsync(_serverIp, port);
             }
         }
     }
@@ -406,25 +441,37 @@ public class Game
         
         Raylib.DrawText("SURVIV.PVP", cx - 150, cy - 200, 60, Color.Red);
         
-        Raylib.DrawText("Enter Nickname:", cx - 100, cy - 80, 20, Color.Gray);
-        // Input Box
-        Raylib.DrawRectangle(cx - 100, cy - 50, 200, 40, Color.LightGray);
-        Raylib.DrawRectangleLines(cx - 100, cy - 50, 200, 40, Color.White);
-        Raylib.DrawText(_nickname, cx - 90, cy - 40, 20, Color.Black);
+        // Nickname
+        Color nickColor = (!_editingIp) ? Color.Yellow : Color.Gray;
+        Raylib.DrawText("Nickname:", cx - 100, cy - 80, 20, nickColor);
+        Raylib.DrawRectangle(cx - 100, cy - 50, 200, 30, Color.LightGray);
+        Raylib.DrawRectangleLines(cx - 100, cy - 50, 200, 30, (!_editingIp) ? Color.Yellow : Color.White);
+        Raylib.DrawText(_nickname, cx - 90, cy - 45, 20, Color.Black);
+
+        // IP Address
+        Color ipColor = (_editingIp) ? Color.Yellow : Color.Gray;
+        Raylib.DrawText("Server IP (Tab):", cx - 100, cy - 10, 20, ipColor);
+        Raylib.DrawRectangle(cx - 100, cy + 20, 200, 30, Color.LightGray);
+        Raylib.DrawRectangleLines(cx - 100, cy + 20, 200, 30, (_editingIp) ? Color.Yellow : Color.White);
+        Raylib.DrawText(_serverIp, cx - 90, cy + 25, 20, Color.Black);
         
         // Color Picker
-        Raylib.DrawText("Choose Color (< >):", cx - 100, cy + 20, 20, Color.Gray);
+        Raylib.DrawText("Choose Color (< >):", cx - 100, cy + 70, 20, Color.Gray);
         Color c = _availableColors[_selectedColorIndex];
         string cName = _colorNames[_selectedColorIndex];
         
         int nameWidth = Raylib.MeasureText(cName, 30);
-        Raylib.DrawText(cName, cx - nameWidth/2, cy + 50, 30, c);
+        Raylib.DrawText(cName, cx - nameWidth/2, cy + 100, 30, c);
         
-        // Play Button info
-        if (_net.IsConnected)
-            Raylib.DrawText("Press ENTER to Play", cx - 100, cy + 120, 20, Color.Green);
+        // Status / Play
+        if (_isConnecting)
+        {
+             Raylib.DrawText("Connecting...", cx - 60, cy + 150, 20, Color.Yellow);
+        }
         else
-            Raylib.DrawText("Connecting...", cx - 60, cy + 120, 20, Color.Yellow);
+        {
+             Raylib.DrawText("Press ENTER to Join", cx - 100, cy + 150, 20, Color.Green);
+        }
     }
     
     private void UpdateDeath(float dt)
@@ -500,7 +547,7 @@ public class Game
             }
             
             // Opcjonalnie: ID nad głową
-            Raylib.DrawText(player.Id.ToString(), (int)sx - 5, (int)sy - 40, 20, new Color(255, 255, 255, 100));
+            // Raylib.DrawText(player.Id.ToString(), (int)sx - 5, (int)sy - 40, 20, new Color(255, 255, 255, 100));
         }
 
         // 2b. Rysowanie Surowców
