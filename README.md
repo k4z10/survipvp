@@ -61,6 +61,6 @@ dotnet run --project GameServer
 # Run Client
 dotnet run --project GameClient
 
-# Published build
+# Published build (Linux only)
 ./GameClient/publish.sh && ./GameClient/publish_output/GameClient
 ```
