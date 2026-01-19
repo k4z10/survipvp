@@ -48,7 +48,7 @@ public class Game
     private string _serverIp = "127.0.0.1";
     private bool _editingIp = false; // false = Nickname, true = IP
     private bool _isConnecting = false;
-    private Task _connectionTask;
+    private Task? _connectionTask;
 
     // Death
     private float _deathTimer = 0f;
@@ -91,7 +91,6 @@ public class Game
             Render();
         }
 
-        Raylib.CloseWindow();
         Raylib.CloseWindow();
         if (_connectionTask != null) await _connectionTask;
     }
@@ -573,7 +572,6 @@ public class Game
         if (_net.Resources != null)
         {
             const float ResourceSize = 0.8f;
-            float rsHalf = ResourceSize / 2.0f;
             float rsScale = ResourceSize * scale;
 
             foreach (var res in _net.Resources.Values)

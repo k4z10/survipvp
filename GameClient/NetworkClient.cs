@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -9,10 +8,10 @@ namespace GameClient;
 
 public class NetworkClient
 {
-    private TcpClient _client;
-    private NetworkStream _stream;
-    private CancellationTokenSource _cts;
-    private Task _receiveTask;
+    private TcpClient? _client;
+    private NetworkStream? _stream;
+    private CancellationTokenSource? _cts;
+    private Task? _receiveTask;
 
     public Dictionary<int, PlayerState> WorldState { get; private set; } = new();
     public Dictionary<int, ResourceState> Resources { get; private set; } = new();
@@ -21,7 +20,7 @@ public class NetworkClient
     public HashSet<WeaponType> UnlockedWeapons { get; private set; } = new();
     public int MyPlayerId { get; private set; } = -1;
     public bool IsConnected => _client != null && _client.Connected;
-    public event Action<int> OnDeath; 
+    public event Action<int>? OnDeath; 
 
 
     private readonly List<WorldSnapshot> _snapshots = new();
@@ -79,7 +78,6 @@ public class NetworkClient
              {
                  if (prev.Players.TryGetValue(kvp.Key, out var pPrev))
                  {
-                     // Lerp
                      float lx = pPrev.X + (kvp.Value.X - pPrev.X) * t;
                      float ly = pPrev.Y + (kvp.Value.Y - pPrev.Y) * t;
                      result[kvp.Key] = new PlayerState { 
@@ -116,7 +114,7 @@ public class NetworkClient
             _stream = _client.GetStream();
             Console.WriteLine("Connected to server.");
 
-            _receiveTask = Task.Run(ReceiveLoop, _cts.Token);
+            _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token), _cts.Token);
         }
         catch (Exception ex)
         {
@@ -142,6 +140,17 @@ public class NetworkClient
         }
 
         _stream = null;
+        
+        // Memory Leak Fix: Clear large collections
+        lock (_snapshots)
+        {
+            _snapshots.Clear();
+        }
+        WorldState.Clear();
+        Resources.Clear();
+        Structures.Clear();
+        Inventory.Clear();
+        
         Console.WriteLine("Disconnected.");
     }
 
@@ -203,37 +212,43 @@ public class NetworkClient
         byte[] lenRaw = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(lenRaw, totalLength);
         
+        var stream = _stream;
+        if (stream == null) return;
+
         try 
         { 
-            lock (_stream)
+            lock (stream)
             {
-                _stream.Write(lenRaw);
-                _stream.Write(data); 
+                stream.Write(lenRaw);
+                stream.Write(data); 
             }
         } 
-        catch { _cts.Cancel(); }
+        catch { _cts?.Cancel(); }
     }
 
-    private async Task ReceiveLoop()
+    private async Task ReceiveLoop(CancellationToken token)
     {
         byte[] lenBuffer = new byte[4];
 
         try
         {
-            while (!_cts.IsCancellationRequested)
+            while (!token.IsCancellationRequested)
             {
                 // 1. Read length
-                if (!await ReadExactAsync(lenBuffer, 4)) break;
+                if (!await ReadExactAsync(lenBuffer, 4, token)) break;
                 int length = BinaryPrimitives.ReadInt32LittleEndian(lenBuffer);
 
                 // 2. Read payload
                 byte[] payload = new byte[length];
-                if (!await ReadExactAsync(payload, length)) break;
+                if (!await ReadExactAsync(payload, length, token)) break;
 
                 // 3. Process
                 // Deserialize IPacket
                 var packet = MemoryPackSerializer.Deserialize<IPacket>(payload);
-                ProcessPacket(packet);
+                if (packet != null)
+                {
+                    ProcessPacket(packet);
+                }
             }
         }
         catch (Exception ex)
@@ -242,12 +257,14 @@ public class NetworkClient
         }
     }
 
-    private async Task<bool> ReadExactAsync(byte[] buffer, int count)
+    private async Task<bool> ReadExactAsync(byte[] buffer, int count, CancellationToken token)
     {
+        if (_stream == null) return false;
+
         int offset = 0;
         while (offset < count)
         {
-            int read = await _stream.ReadAsync(buffer, offset, count - offset, _cts.Token);
+            int read = await _stream.ReadAsync(buffer, offset, count - offset, token);
             if (read == 0) return false; // Socket closed
             offset += read;
         }
@@ -268,8 +285,7 @@ public class NetworkClient
                 
                 // Sync Time
                 long now = Stopwatch.GetTimestamp();
-                long latency = 0; 
-                long offset = now - serverTimestamp + latency;
+                long offset = now - serverTimestamp;
                 
                 if (!_timeSynced)
                 {

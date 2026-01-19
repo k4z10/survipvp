@@ -110,15 +110,18 @@ public class ClientSession
         if (buffer.Length < 4 + payloadLength) return false;
 
         var payloadSlice = buffer.Slice(4, payloadLength);
-        
-        IPacket deserializedPacket;
+        IPacket? deserializedPacket;
         try 
         {
-             deserializedPacket = MemoryPackSerializer.Deserialize<IPacket>(payloadSlice.ToArray());
+             deserializedPacket = MemoryPackSerializer.Deserialize<IPacket>(payloadSlice.ToArray()) as IPacket;
+             if (deserializedPacket == null)
+             {
+                 buffer = buffer.Slice(4 + payloadLength);
+                 return true;
+             }
         }
         catch
         {
-             // Invalid packet, skip
              buffer = buffer.Slice(4 + payloadLength);
              return true; 
         }
