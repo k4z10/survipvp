@@ -1,66 +1,109 @@
 # survipvp
 
-A 2D Multiplayer Survival PvP game built with C# and Raylib.
+**A high-performance, authoritative-server multiplayer survival sandbox engineered with C# .NET 9.0 and Raylib.**
 
-## Features
-- **Multiplayer**: Real-time multiplayer with lag compensation and client-side prediction.
-- **Combat**: Melee combat with different weapons (Wood, Stone, Gold swords).
-- **Gathering**: Collect resources (Wood, Stone, Gold) from the environment.
-- **Crafting**: Craft weapons and fences using gathered resources.
-- **Building**: Place fences to create defenses.
-- **Customization**: Choose your nickname and character color.
-- **Lag Compensation**: Client-side prediction and interpolation for smooth gameplay.
-- **LAN Support**: Play with friends on your local network.
+## Overview
 
-## Visuals
-The game features a clean 2D aesthetic with:
-- Grid-based rendering for motion clarity.
-- Visual feedback for gathering and combat.
-- Dynamic UI for inventory and crafting.
-- Color-coded players and resources.
+**survipvp** is a technical demonstration of a real-time multiplayer architecture applied to a 2D survival PvP environment. The project prioritizes robust networking fundamentals—specifically lag compensation, client-side prediction, and entity interpolation—to ensure a fluid combat experience over TCP.
 
-## How to Play
+Unlike typical peer-to-peer implementations, this project utilizes a dedicated **Authoritative Server** architecture, ensuring state integrity and preventing client-side exploitation. The rendering pipeline is powered by `Raylib-cs`, delivering high-speed, hardware-accelerated 2D graphics with minimal overhead.
 
-### Joining a Game (LAN)
-1.  **Start the Server**:
-    - Build and run the `GameServer` project.
-    - Console will show "Server started on port 6767".
-2.  **Start the Client**:
-    - Build and run the `GameClient` project.
-3.  **Startup Screen**:
-    - **Nickname**: Type your desired nickname.
-    - **Server IP**: Press `Tab` to switch to the IP field. Type the IP address of the server (e.g., `192.168.1.X`, or `127.0.0.1` for local play).
-    - **Color**: Use `Left/Right Arrows` to choose your character color.
-    - **Join**: Press `Enter` to connect and join the game.
+## Core Features
 
-### Controls
-- **Movement**: `W`, `A`, `S`, `D`
-- **Gather**: `E` (near resources)
-- **Attack**: `Left Mouse Button`
-- **Rotate**: `Mouse` (character looks at mouse cursor)
-- **Hotbar**: `1`, `2`, `3`, `4` (Select items/weapons)
-- **Build**: Select Fence (`5`), then `Left Click` to place. `Right Click` to rotate structure.
-- **Crafting**: `5` (Craft Fences), or select locked weapon in hotbar (`2`, `3`, `4`) to craft it.
-- **Toggle Recipes**: `I`
+### Engineering & Network Architecture
 
-## Technical Details
-- **Architecture**: Authoritative Server with Client-Side Prediction and Interpolation.
-- **Networking**: TCP with `MemoryPack` for high-performance zero-copy serialization.
-- **Graphics**: `Raylib-cs` for fast 2D rendering.
-- **Physics**: Simple AABB/Circle collision detection.
+* **Authoritative Server Model:** The server acts as the single source of truth for all game state, physics simulation, and collision resolution.
+* **Latency Mitigation:** Implements **Client-Side Prediction** for immediate local feedback and **Entity Interpolation** to smooth out remote player movement, masking network jitter.
+* **Zero-Copy Serialization:** Utilizes `MemoryPack` for extremely fast, allocation-free serialization of network packets, minimizing GC pressure during high-frequency tick updates.
+* **Cross-Platform Compatibility:** Fully playable on Linux, Windows, and macOS via the .NET Core runtime and Raylib abstractions.
 
-## Requirements
-- .NET 9.0 SDK
-- Linux/Windows/Mac (Cross-platform support via Raylib-cs)
+### Gameplay Mechanics
 
-## Running from Source
+* **Resource Economy:** A gathering loop involving dynamic extraction of Wood, Stone, and Gold to fuel progression.
+* **Tiered Combat System:** Melee engagement mechanics featuring weapon progression (Wood  Stone  Gold) with distinct damage attributes.
+* **Fortification:** a grid-based building system allowing players to construct defensive perimeters (fences) to control map flow.
+* **Customization:** lightweight profile system for nickname assignment and RGB character customization.
+
+## Technical Stack
+
+| Component | Technology | Description |
+| --- | --- | --- |
+| **Language** | C# (.NET 9.0) | High-performance, modern managed runtime. |
+| **Rendering** | Raylib-cs | Hardware-accelerated 2D rendering library. |
+| **Networking** | TCP / Sockets | Reliable transport layer. |
+| **Serialization** | MemoryPack | High-performance binary serializer. |
+| **Physics** | Custom AABB/Circle | Optimized discrete collision detection. |
+
+## Installation & Deployment
+
+### Prerequisites
+
+* **.NET 9.0 SDK**
+* **C Compiler** (GCC/Clang) for native Raylib bindings (if not pre-bundled).
+
+### Building from Source
+
 ```bash
-# Run Server
+# Clone the repository
+git clone https://github.com/yourusername/survipvp.git
+cd survipvp
+
+# 1. Initialize the Server
+# The server governs the game state and accepts incoming TCP connections.
 dotnet run --project GameServer
 
-# Run Client
+# 2. Initialize the Client
+# Launch multiple instances to simulate multiplayer locally.
 dotnet run --project GameClient
 
-# Published build (Linux only)
-./GameClient/publish.sh && ./GameClient/publish_output/GameClient
 ```
+
+### Production Build (Linux)
+
+For a standalone optimized release:
+
+```bash
+chmod +x ./GameClient/publish.sh
+./GameClient/publish.sh
+./GameClient/publish_output/GameClient
+
+```
+
+## User Guide
+
+### Connection Handshake
+
+1. Launch `GameServer`. Verify console output: `Server started on port 6767`.
+2. Launch `GameClient`.
+3. **Authentication UI**:
+* **Nickname**: Enter identifier.
+* **Endpoint**: Press `Tab`. Input target IP (Localhost: `127.0.0.1` or LAN: `192.168.x.x`).
+* **Avatar**: Cycle colors using `Left/Right Arrows`.
+* **Connect**: Press `Enter`.
+
+
+
+### Input Schema
+
+| Action | Input | Context |
+| --- | --- | --- |
+| **Locomotion** | `W`, `A`, `S`, `D` | Omnidirectional movement. |
+| **Orientation** | `Mouse Cursor` | Character faces cursor vector. |
+| **Interaction** | `E` | Gather resources / Interact. |
+| **Combat** | `LMB` | Primary attack. |
+| **Hotbar** | `1` - `4` | Equip items or weapons. |
+| **Craft/Build** | `5` | Equip Fence. |
+| **Placement** | `LMB` | Place structure (if `5` is active). |
+| **Structure Rotate** | `RMB` | Rotate held structure. |
+| **Crafting** | `2`, `3`, `4` | Click locked slot to craft (if resources available). |
+| **Recipe Overlay** | `I` | Toggle HUD recipe list. |
+
+---
+
+## Visual Design
+
+The rendering engine employs a functional, grid-based aesthetic designed for clarity:
+
+* **Motion Clarity:** High framerate rendering ensures fluid tracking of fast-moving targets.
+* **Visual Feedback:** Particle emission and sprite transformations provide immediate confirmation of gathering impacts and combat hits.
+* **Dynamic UI:** Inventory management and crafting states are visualized in real-time, overlaying the viewport only when necessary.
